@@ -60,6 +60,7 @@ object Column {
       value match {
         case string: String => Right(string)
         case clob: java.sql.Clob => Right(clob.getSubString(1, clob.length.asInstanceOf[Int]))
+        case blob: java.sql.Blob => Right(new String(blob.getBytes(1, blob.length.asInstanceOf[Int])))
         case _ => Left(TypeDoesNotMatch("Cannot convert " + value + ":" + value.asInstanceOf[AnyRef].getClass + " to String for column " + qualified))
       }
     }
@@ -102,6 +103,14 @@ object Column {
     value match {
       case bool: Boolean => Right(bool)
       case _ => Left(TypeDoesNotMatch("Cannot convert " + value + ":" + value.asInstanceOf[AnyRef].getClass + " to Boolean for column " + qualified))
+    }
+  }
+
+  implicit def rowToByteArray: Column[Array[Byte]] = Column.nonNull { (value, meta) =>
+    val MetaDataItem(qualified, nullable, clazz) = meta
+    value match {
+      case blob: java.sql.Blob => Right(blob.getBytes(1, blob.length.asInstanceOf[Int]))
+      case _ => Left(TypeDoesNotMatch("Cannot convert " + value + ":" + value.asInstanceOf[AnyRef].getClass + " to Array[Byte] for column " + qualified))
     }
   }
 
@@ -506,13 +515,21 @@ object Sql {
 
       } + "." + meta.getColumnName(i), alias = Option(meta.getColumnLabel(i))),
         nullable = meta.isNullable(i) == columnNullable,
-        clazz = meta.getColumnClassName(i))))
+          clazz = meta.getColumnClassName(i) match {
+            case "[B" => "java.sql.Blob"
+            case a => a
+        })))
   }
 
   def resultSetToStream(rs: java.sql.ResultSet): Stream[SqlRow] = {
     val rsMetaData = metaData(rs)
     val columns = List.range(1, rsMetaData.columnCount + 1)
-    def data(rs: java.sql.ResultSet) = columns.map(nb => rs.getObject(nb))
+    def data(rs: java.sql.ResultSet) = {
+      columns.map(nb => nb match {
+        case n: Int if (rs.getMetaData().getColumnClassName(n) == "[B") => rs.getBlob(n)
+        case b => rs.getObject(b)
+      })
+    }
     Useful.unfold(rs)(rs => if (!rs.next()) { rs.getStatement.close(); None } else Some((new SqlRow(rsMetaData, data(rs)), rs)))
   }
 
