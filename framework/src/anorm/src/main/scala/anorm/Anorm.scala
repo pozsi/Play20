@@ -526,7 +526,7 @@ object Sql {
     val columns = List.range(1, rsMetaData.columnCount + 1)
     def data(rs: java.sql.ResultSet) = {
       columns.map(nb => nb match {
-        case n: Int if (rs.getMetaData().getColumnClassName(n) == "[B") => rs.getBlob(n)
+        case n: Int if (rs.getMetaData().getColumnClassName(n) == "[B" || rs.getMetaData().getColumnClassName(n) == "java.sql.Blob") => rs.getBlob(n)
         case b => rs.getObject(b)
       })
     }
